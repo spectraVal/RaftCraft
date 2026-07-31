@@ -1,9 +1,9 @@
 export const ROLES = { FOLLOWER: "follower", CANDIDATE: "candidate", LEADER: "leader" };
 
 export class RaftNode {
-    constructor (id, cluster) {
+    constructor (id, peers) {
         this.id = id;
-        this.cluster = cluster;
+        this.peers = peers; // array "host:port"
         this.term = 0;
         this.votedFor = null;
         this.role = ROLES.FOLLOWER;
@@ -18,27 +18,46 @@ export class RaftNode {
         this.electionTimer = setTimeout(() => this.startElection(), timeoutMs);
     }
 
-    startElection() {
+    async startElection() {
         this.role = ROLES.CANDIDATE;
         this.term += 1;
         this.votedFor = this.id;
         console.log(`[Node ${this.id}] election timeout -> mulai election term ${this.term}`);
 
         let votes = 1; // vote untuk diri sendiri
-        const peers = this.cluster.getPeersOf(this.id);
+        
+        const results = await Promise.allSettled(
+            this.peers.map((peer) => this.requestVoteFrom(peer))
+        );
 
-        for (const peer of peers) {
-            const granted = peer.handleRequestVote(this.term, this.id);
-            if (granted) votes += 1;
+        for (const result of results) {
+            if (result.status === 'fulfilled' && result.value) {
+                votes += 1;
+            }
         }
 
-        const majority = Math.floor(this.cluster.nodes.length / 2) + 1;
+        const majority = Math.floor(this.peers.length / 2) + 1;
+        
         if (votes >= majority && this.role === ROLES.CANDIDATE) {
             this.becomeLeader();
         } else {
-            // split vote atau kalah
             this.role = ROLES.FOLLOWER;
             this.resetElectionTimer();
+        }
+    }
+
+    async requestVoteFrom(peer) {
+        try {
+            const response = await fetch(`http://${peer}/request-vote`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ term: this.term, candidateId: this.id })
+            });
+            const data = await response.json();
+            return data.voteGranted;
+        } catch (err) {
+            console.error(`[Node ${this.id}] Error requesting vote from ${peer}:`, err);
+            return false;
         }
     }
 
@@ -64,16 +83,27 @@ export class RaftNode {
         this.role = ROLES.LEADER;
         clearTimeout(this.electionTimer);
         console.log(`[Node ${this.id}] *** JADI LEADER untuk term ${this.term} ***`)
-        this.starHeartbeat();
+        this.startHeartbeat();
     }
 
-    starHeartbeat() {
+    startHeartbeat() {
         this.hearbeatInterval = setInterval(() => {
-            const peers = this.cluster.getPeersOf(this.id);
-            for (const peer of peers) {
-                peer.handleAppendEntries(this.term, this.id);
+            for (const peer of this.peers) {
+                this.sendAppendEntriesTo(peer);
             }
         }, 50); // target interval ~50ms
+    }
+
+    async sendAppendEntriesTo(peer) {
+        try {
+            await fetch(`http://${peer}/append-entries`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ term: this.term, leaderId: this.id })
+            });
+        } catch (err) {
+            console.error(`[Node ${this.id}] Error sending append entries to ${peer}:`, err);
+        }
     }
 
     handleAppendEntries(leaderTerm, leaderId) {
@@ -81,6 +111,12 @@ export class RaftNode {
             this.term = leaderTerm;
             this.role = ROLES.FOLLOWER;
             this.resetElectionTimer(); // heartbeat diterima -> reset timeout
+            return true;
         }
+        return false;
+    }
+
+    getStatus() {
+        return { nodeId: this.id, role: this.role, term: this.term };
     }
 }
