@@ -1,4 +1,5 @@
 import express from "express";
+import { RaftNode } from "./raft-node.js";
 
 // Configure via environment variables
 const NODE_ID = process.env.NODE_ID;
@@ -12,6 +13,8 @@ if (!NODE_ID || !PORT) {
     process.exit(1);
 }
 
+const node = new RaftNode(NODE_ID, PEERS);
+
 const app = express();
 app.use(express.json());
 
@@ -20,22 +23,22 @@ app.get("/ping", (req, res) => {
     res.json({ nodeId: NODE_ID, status: 'alive', timestamp: Date.now() });
 });
 
-app.listen(PORT, () => {
-    console.log(`[Node ${NODE_ID}] listening on port ${PORT}`);
-    startPingingPeers();
+app.get("/status", (req, res) => {
+    res.json(node.getStatus());
 });
 
-// Function to ping peers
-function startPingingPeers() {
-    setInterval(async () => {
-        for (const peer of PEERS) {
-            try {
-                const response = await fetch(`http://${peer}/ping`);
-                const data = await response.json();
-                console.log(`[Node ${NODE_ID}] -> peer ${peer} respond: node ${data.nodeId} is ${data.status}`);
-            } catch (err) {
-                console.log(`[Node ${NODE_ID}] -> peer ${peer} UNREACHABLE (${err.message})`);
-            }
-        }
-    }, 2000); // Ping every 2 seconds
-}
+app.post("/request-vote", (req, res) => {
+    const { term, candidateId } = req.body;
+    const voteGranted = node.handleRequestVote(term, candidateId);
+    res.json({ voteGranted, term: node.term });
+});
+
+app.post("/append-entries", (req, res) => {
+    const { term, leaderId } = req.body;
+    const success = node.handleAppendEntries(term, leaderId);
+    res.json({ success, term: node.term });
+})
+
+app.listen(PORT, () => {
+    console.log(`[Node ${NODE_ID}] listening on port ${PORT}`);
+});
