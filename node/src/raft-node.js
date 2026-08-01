@@ -9,6 +9,16 @@ export class RaftNode {
         this.role = ROLES.FOLLOWER;
         this.electionTimer = null;
         this.hearbeatInterval = null;
+
+        // Milestone 3
+        this.log = [];
+        this.commitIndex = -1;
+        this.lastApplied = -1;
+        this.store = new Map(); // state machine hasil apply command
+        this.leaderId = null;
+        this.nextIndex = {}; // per peer: indext entry berikutnya yang akan dikirim
+        this.matchIndex = {}; // per peer: index entry tertinggi yang telah di-acknowledge oleh peer
+
         this.resetElectionTimer();
     }
 
@@ -31,16 +41,14 @@ export class RaftNode {
         );
 
         for (const result of results) {
-            if (result.status === 'fulfilled' && result.value) {
-                votes += 1;
-            }
+            if (result.status === 'fulfilled' && result.value) votes += 1;
         }
 
         const majority = Math.floor(this.peers.length / 2) + 1;
         
         if (votes >= majority && this.role === ROLES.CANDIDATE) {
             this.becomeLeader();
-        } else {
+        } else if (this.role === ROLES.CANDIDATE) {
             this.role = ROLES.FOLLOWER;
             this.resetElectionTimer();
         }
@@ -81,42 +89,145 @@ export class RaftNode {
 
     becomeLeader() {
         this.role = ROLES.LEADER;
+        this.leaderId = this.id;
         clearTimeout(this.electionTimer);
         console.log(`[Node ${this.id}] *** JADI LEADER untuk term ${this.term} ***`)
+        
+        for (const peer of this.peers) {
+            this.nextIndex[peer] = this.log.length;
+            this.matchIndex[peer] = -1;
+        }
+
         this.startHeartbeat();
     }
 
     startHeartbeat() {
         this.hearbeatInterval = setInterval(() => {
             for (const peer of this.peers) {
-                this.sendAppendEntriesTo(peer);
+                this.replicateTo(peer);
             }
         }, 50); // target interval ~50ms
     }
 
-    async sendAppendEntriesTo(peer) {
+    async replicateTo(peer) {
+        const nextIdx = this.nextIndex[peer] ?? this.log.length;
+        const prevLogIndex = nextIdx - 1;
+        const prevLogTerm = prevLogIndex >= 0 ? this.log[prevLogIndex].term : 0;
+        const entries = this.log.slice(nextIdx);
+
         try {
-            await fetch(`http://${peer}/append-entries`, {
+            const response = await fetch(`http://${peer}/append-entries`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ term: this.term, leaderId: this.id })
+                body: JSON.stringify({
+                    term: this.term,
+                    leaderId: this.id,
+                    prevLogIndex,
+                    prevLogTerm,
+                    entries,
+                    leaderCommit: this.commitIndex,
+                }),
             });
-        } catch (err) {
-            console.error(`[Node ${this.id}] Error sending append entries to ${peer}:`, err);
+
+            const data = await response.json();
+
+            if (data.term > this.term) {
+                this.term = data.term;
+                this.role = ROLES.FOLLOWER;
+                this.leaderId = null;
+                clearInterval(this.hearbeatInterval);
+                this.resetElectionTimer();
+                return;
+            }
+
+            if (data.success) {
+                this.matchIndex[peer] = prevLogIndex + entries.length;
+                this.nextIndex[peer] = this.matchIndex[peer] + 1;
+                this.updateCommitIndex();
+            } else {
+                this.nextIndex[peer] = Math.max(0, nextIdx - 1);
+            }
+        } catch (err) {}
+    }
+
+    updateCommitIndex() {
+        const matchIndexes = [this.log.length -1, ...Object.values(this.matchIndex)];
+        matchIndexes.sort((a, b) => b - a);
+        const majorityIndex = matchIndexes[Math.floor(matchIndexes.length / 2)];
+
+        if (
+            majorityIndex > this.commitIndex &&
+            majorityIndex >= 0 &&
+            this.log[majorityIndex].term === this.term
+        ) {
+            this.commitIndex = majorityIndex;
+            this.applyCommitted();
         }
     }
 
-    handleAppendEntries(leaderTerm, leaderId) {
-        if (leaderTerm >= this.term) {
-            this.term = leaderTerm;
-            this.role = ROLES.FOLLOWER;
-            this.resetElectionTimer(); // heartbeat diterima -> reset timeout
-            return true;
+    applyCommitted() {
+        while (this.lastApplied < this.commitIndex) {
+            this.lastApplied += 1;
+            const { command } = this.log[this.lastApplied];
+            if (command.type === "set") {
+                this.store.set(command.key, command.value);
+            }
         }
-        return false;
+    }
+
+    handleAppendEntries(payload) {
+        const { term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit } = payload;
+
+        if (term < this.term) {
+            return { success: false, term: this.term };
+        }
+
+        this.term = term;
+        this.role = ROLES.FOLLOWER;
+        this.leaderId = leaderId;
+        this.resetElectionTimer();
+
+        if (prevLogIndex >= 0) {
+            const prevEntry = this.log[prevLogIndex];
+            if (!prevEntry || prevEntry.term !== prevLogTerm) {
+                return { success: false, term: this.term };
+            }
+        }
+
+        this.log = this.log.slice(0, prevLogIndex + 1).concat(entries);
+
+        if (leaderCommit > this.commitIndex) {
+            this.commitIndex = Math.min(leaderCommit, this.log.length - 1);
+            this.applyCommitted();
+        }
+
+        return { success: true, term: this.term };
+    }
+
+    // Client facing
+    clientSet(key, value) {
+        if (this.role !== ROLES.LEADER) {
+            return { success: false, message: "Not the leader", leaderId: this.leaderId };
+        }
+        this.log.push({ term: this.term, command: { type: "set", key, value } });
+        return { success: true };
+    }
+
+    clientGet(key) {
+        if (this.role !== ROLES.LEADER) {
+            return { success: false, message: "Not the leader", leaderId: this.leaderId };
+        }
+        return { success: true, value: this.store.get(key) ?? null };
     }
 
     getStatus() {
-        return { nodeId: this.id, role: this.role, term: this.term };
+        return { 
+            nodeId: this.id,
+            role: this.role,
+            term: this.term,
+            logLength: this.log.length,
+            commitIndex: this.commitIndex,
+            leaderId: this.leaderId,
+         };
     }
 }

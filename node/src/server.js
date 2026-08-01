@@ -34,10 +34,18 @@ app.post("/request-vote", (req, res) => {
 });
 
 app.post("/append-entries", (req, res) => {
-    const { term, leaderId } = req.body;
-    const success = node.handleAppendEntries(term, leaderId);
-    res.json({ success, term: node.term });
-})
+    const result = node.handleAppendEntries(req.body);
+    res.json(result);
+});
+
+app.post("/client/set", (req, res) => {
+    const { key, value } = req.body;
+    res.json(node.clientSet(key, value));
+});
+
+app.get("/client/get/:key", (req, res) => {
+    res.json(node.clientGet(req.params.key));
+});
 
 app.listen(PORT, () => {
     console.log(`[Node ${NODE_ID}] listening on port ${PORT}`);
