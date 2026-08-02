@@ -7,6 +7,8 @@ const NODES = [
   { id: 'C', url: 'http://localhost:4003' },
 ];
 
+const ORCHESTRATOR_URL = 'http://localhost:7000';
+
 const ROLE_COLORS = {
   leader: '#2ecc71',
   candidate: '#f1c40f',
@@ -46,18 +48,30 @@ function useClusterStatus(pollIntervalMs = 1000) {
   return statuses;
 }
 
-function NodeCard({ status }) {
+async function killNode(id) {
+  await fetch(`${ORCHESTRATOR_URL}/kill/${id}`, { method: 'POST' });
+}
+
+async function reviveNode(id) {
+  await fetch(`${ORCHESTRATOR_URL}/revive/${id}`, { method: 'POST' });
+}
+function NodeCard({ status, id }) {
   const role = status?.role ?? 'unreachable';
   const color = ROLE_COLORS[role] ?? ROLE_COLORS.unreachable;
+  const isAlive = status?.reachable;
 
   return (
     <div className="node-card" style={{ borderColor: color }}>
-      <h2 style={{ color }}>{status?.nodeId ?? '?'}</h2>
+      <h2 style={{ color }}>{id}</h2>
       <p><strong>Role:</strong> {role}</p>
       <p><strong>Term:</strong> {status?.term ?? '-'}</p>
       <p><strong>Log Length:</strong> {status?.logLength ?? '-'}</p>
       <p><strong>Commit Index:</strong> {status?.commitIndex ?? '-'}</p>
       <p><strong>Known Leader:</strong> {status?.leaderId ?? '-'}</p>
+      <div className="node-controls">
+        <button onClick={() => killNode(id)} disabled={!isAlive}>Kill</button>
+        <button onClick={() => reviveNode(id)} disabled={isAlive}>Revive</button>
+      </div>
     </div>
   );
 }
@@ -70,7 +84,7 @@ function App() {
       <h1>Raft Cluster Dashboard</h1>
       <div className="node-grid">
         {NODES.map((node) => (
-          <NodeCard key={node.id} status={statuses[node.id]} />
+          <NodeCard key={node.id} id={node.id} status={statuses[node.id]} />
         ))}
       </div>
     </div>

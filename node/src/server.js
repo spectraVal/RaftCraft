@@ -53,6 +53,5 @@ app.get("/client/get/:key", (req, res) => {
     res.json(node.clientGet(req.params.key));
 });
 
-app.listen(PORT, () => {
-    console.log(`[Node ${NODE_ID}] listening on port ${PORT}`);
+app.listen(PORT, () => {    console.log(`[Node ${NODE_ID}] listening on port ${PORT}`);
 });
