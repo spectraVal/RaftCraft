@@ -20,19 +20,36 @@ Dokumentasi lengkap konteks dan tujuan proyek tersedia di:
 
 ## 2. Cara Menjalankan
 
-> **Status**: TBD - instruksi akan dilengkapi setelah Fase 4 (Development) menghasilkan sistem yang dapat dijalankan.
+### Prasyarat
+- Node.js versi 18+
 
-Target akhir menjalankan sistem:
+### Menjalankan (mode development, tanpa Docker)
 
-```bash
-docker compose up
+Buka 2 terminal:
+
+**Terminal 1 - Orchestrator (otomatis start 3 node Raft: A, B, C)**
+```cmd
+cd node
+npm install
+npm run orchestrator
 ```
 
-Target akses:
-- Dashboard: `http://localhost:TBD`
-- Node API (contoh): `http://localhost:TBD/client/set`, `http://localhost:TBD/client/get`
+**Terminal 2 - Dashboard**
+```cmd
+cd dashboard
+npm install
+npm run dev
+```
 
-Detail lengkap (prasyarat, environment variable, port tiap node) akan dilengkapi di bagian ini setelah `docker-compose.yml` final tersedia (lihat ADR-003 - Deployment Topology, TBD).
+Buka browser ke URL yang ditampilkan terminal dashboard (biasanya `http://localhost:8000`).
+
+### Endpoint yang Tersedia
+- Dashboard: `http://localhost:5173`
+- Orchestrator control API: `http://localhost:7000` (`GET /nodes`, `POST /kill/:id`, `POST /revive/:id`)
+- Node API per node: `http://localhost:4001`, `:4002`, `:4003` (`GET /status`, `POST /client/set`, `GET /client/get/:key`)
+
+### Menjalankan via Docker Compose
+> **Status**: TBD - stretch goal, belum diimplementasikan. Lihat ADR-003 untuk keputusan deployment topology.
 
 ---
 
@@ -58,14 +75,17 @@ Rincian lengkap ada di [`docs/02-PROJECT_OVERVIEW.md`](docs/02-PROJECT_OVERVIEW.
 
 ## 4. Demo
 
-> **Status: TBD.**
-> Bagian ini akan berisi video/GIF yang menunjukkan skenario:
-> 1. Cluster start-up dan leader terpilih otomatis
-> 2. Client melakukan `set`/`get` melalui leader
-> 3. Leader dimatikan secara paksa → re-election terjadi < 1 detik
-> 4. Data yang sudah committed tetap konsisten setelah leader baru terpilih
->
-> Akan diisi setelah Milestone 5 (Fase 4) selesai.
+> **Status**: Seluruh skenario di bawah sudah diverifikasi berjalan (Milestone 0-5). Video/GIF demo aktual: **TBD** - rekaman belum diunggah ke README ini.
+
+Skenario yang terbukti bekerja dan dapat direplikasi:
+1. Cluster start-up dan leader terpilih otomatis dalam waktu wajar
+2. Client melakukan `set`/`get` melalui leader; follower menolak dengan redirect info `leaderId`
+3. Leader dimatikan (via tombol Kill di dashboard) → re-election terjadi otomatis, follower baru menjadi `candidate` lalu `leader`
+4. Data yang sudah committed sebelum leader mati tetap konsisten dan dapat diakses dari leader baru
+5. Kill 2 dari 3 node lalu revive salah satu → cluster kembali mencapai quorum dan memilih leader baru
+6. Seluruh proses di atas teramati real-time di dashboard React (perubahan warna kartu: hijau=leader, kuning=candidate, biru=follower, abu-abu=unreachable)
+
+**Catatan**: node yang di-revive kehilangan state sebelumnya (term kembali ke 0, log kosong) - ini konsekuensi dari keputusan in-memory log (ADR-002), bukan bug.
 
 ---
 
