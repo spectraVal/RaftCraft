@@ -44,7 +44,7 @@ npm run dev
 Buka browser ke URL yang ditampilkan terminal dashboard (biasanya `http://localhost:8000`).
 
 ### Endpoint yang Tersedia
-- Dashboard: `http://localhost:5173`
+- Dashboard: `http://localhost:8000`
 - Orchestrator control API: `http://localhost:7000` (`GET /nodes`, `POST /kill/:id`, `POST /revive/:id`)
 - Node API per node: `http://localhost:4001`, `:4002`, `:4003` (`GET /status`, `POST /client/set`, `GET /client/get/:key`)
 
