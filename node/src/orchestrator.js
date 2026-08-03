@@ -12,15 +12,24 @@ const NODE_CONFIGS = {
     C: { port: 4003, peers: ['localhost:4001', 'localhost:4002'] },
 };
 
-const processes = [];
+const processes = {};
 
 function startNode(id) {
     const config = NODE_CONFIGS[id];
     const child = spawn("node", [serverPath], {
-        env: { ...process.env, NODE_ID: id, PORT: String(config.port), PEERS: config.peers.join(',') },
-        stdio: "inherit",
+        env: { 
+            ...process.env, 
+            NODE_ID: id, 
+            PORT: String(config.port), 
+            PEERS: config.peers.join(',') },
+        stdio: ['ignore', 'pipe', 'pipe'],
     });
+
     processes[id] = child;
+    
+    child.stdout.on("data", (data) => process.stdout.write(`[Node ${id}] ${data}`));
+    child.stderr.on("data", (data) => process.stderr.write(`[Node ${id}] ${data}`));
+
     child.on('exit', () => {
         if (processes[id] === child) processes[id] = null;
     });
@@ -37,6 +46,10 @@ function killNode(id) {
     }
     return false;
 };
+
+function killAllNodes() {
+    for (const id of Object.keys(NODE_CONFIGS)) killNode(id);
+}
 
 for (const id of Object.keys(NODE_CONFIGS)) {
     startNode(id);
@@ -75,9 +88,18 @@ app.post('/revive/:id', (req, res) => {
 });
 
 const CONTROL_PORT = 7000;
-app.listen(CONTROL_PORT, () => {
+const httpServer = app.listen(CONTROL_PORT, () => {
     console.log(`[Orchestrator] Control API listening on port ${CONTROL_PORT}`);
 });
+
+function shutdown() {
+    console.log('\n[Orchestrator] Shutting down all nodes...');
+    killAllNodes();
+    httpServer.close(() => {
+        process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 2000).unref(); // Force exit if not closed in time
+}
 
 process.on("SIGINT", () => {
     console.log('\n[Orchestrator] Shutting down all nodes...');
