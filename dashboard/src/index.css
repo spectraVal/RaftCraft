@@ -15,6 +15,19 @@
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --role-leader: #1e9e57;
+  --role-candidate: #a6790a;
+  --role-follower: #2472a4;
+  --role-unreachable: #6b7280;
+
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
   color-scheme: light dark;
@@ -24,6 +37,10 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  --status-error: #c0392b;
+  --status-success: #1e8449;
+  --radius: 6px;
 
   @media (max-width: 1024px) {
     font-size: 16px;
@@ -43,6 +60,11 @@
     --social-bg: rgba(47, 48, 58, 0.5);
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+
+    --role-leader: #2ecc71;
+    --role-candidate: #f1c40f;
+    --role-follower: #3498db;
+    --role-unreachable: #9ca3af;
   }
 
   #social .button-icon {

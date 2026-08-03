@@ -10,10 +10,10 @@ const NODES = [
 const ORCHESTRATOR_URL = 'http://localhost:7000';
 
 const ROLE_COLORS = {
-  leader: '#2ecc71',
-  candidate: '#f1c40f',
-  follower: '#3498db',
-  unreachable: '#7f8c8d',
+  leader: 'var(--role-leader)',
+  candidate: 'var(--role-candidate)',
+  follower: 'var(--role-follower)',
+  unreachable: 'var(--role-unreachable)',
 };
 
 function useClusterStatus(pollIntervalMs = 1000) {
